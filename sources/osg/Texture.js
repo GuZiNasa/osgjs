@@ -130,6 +130,7 @@ define( [
             this._image = undefined;
             this._magFilter = Texture.LINEAR;
             this._minFilter = Texture.LINEAR;
+            this._filterMult = 1.0;
             this._wrapS = Texture.CLAMP_TO_EDGE;
             this._wrapT = Texture.CLAMP_TO_EDGE;
             this._textureWidth = 0;
@@ -145,10 +146,10 @@ define( [
         },
 
         // check https://www.khronos.org/registry/webgl/specs/latest/1.0/#PIXEL_STORAGE_PARAMETERS
-        setColorSpaceConversion: function( enumValue ) {
+        setColorSpaceConversion: function ( enumValue ) {
             this._colorSpaceConversion = enumValue;
         },
-        setFlipY: function( bool ) {
+        setFlipY: function ( bool ) {
             this._flipY = bool;
         },
 
@@ -192,11 +193,13 @@ define( [
         getHeight: function () {
             return this._textureHeight;
         },
-        releaseGLObjects: function ( ) {
+        releaseGLObjects: function () {
             if ( this._textureObject !== undefined && this._textureObject !== null ) {
                 Texture.textureManager.releaseTextureObject( this._textureObject );
                 this._textureObject = undefined;
-                this._image = undefined;
+                // only gl object
+                // we keep it if we want to recreate it.
+                // this._image = undefined;
             }
         },
 
@@ -207,14 +210,6 @@ define( [
         getWrapS: function () {
             return this._wrapS;
         },
-        getMinFilter: function () {
-            return this._minFilter;
-        },
-        getMagFilter: function () {
-            return this._magFilter;
-        },
-
-
         setWrapS: function ( value ) {
 
             if ( typeof ( value ) === 'string' ) {
@@ -224,10 +219,8 @@ define( [
             } else {
 
                 this._wrapS = value;
-
             }
         },
-
 
         setWrapT: function ( value ) {
 
@@ -238,34 +231,45 @@ define( [
             } else {
 
                 this._wrapT = value;
-
             }
         },
 
+        getMinFilter: function () {
+            return this._minFilter;
+        },
+        getMagFilter: function () {
+            return this._magFilter;
+        },
 
+        // https://www.opengl.org/registry/specs/EXT/texture_filter_anisotropic.txt
+        setAnisotropy: function ( multiplier ) {
+            var anisoExt = Texture.ANISOTROPIC_SUPPORT_EXT;
+            if ( anisoExt && multiplier && multiplier > 1.0 ) {
+                var max = Texture.ANISOTROPIC_SUPPORT_MAX;
+                multiplier = multiplier > max ? max : multiplier;
+                this._filterMult = multiplier;
+            }
+        },
+        getAnisotropy: function () {
+            return this._filterMult;
+        },
+
+        // some value enable mipmapping
         setMinFilter: function ( value ) {
-
             if ( typeof ( value ) === 'string' ) {
-
-                this._minFilter = checkAndFixEnum( value, Texture.LINEAR );
-
+                this._minFilter = Texture[ value ];
             } else {
-
                 this._minFilter = value;
-
             }
         },
 
+        // Either Linear or nearest.
         setMagFilter: function ( value ) {
 
             if ( typeof ( value ) === 'string' ) {
-
-                this._magFilter = checkAndFixEnum( value, Texture.LINEAR );
-
+                this._magFilter = Texture[ value ];
             } else {
-
                 this._magFilter = value;
-
             }
         },
 
@@ -329,6 +333,14 @@ define( [
 
         applyFilterParameter: function ( gl, target ) {
 
+            // TODO: make a check to get if the underlying webgl implementation supports
+            // or not NPOT texture  https://www.opengl.org/registry/specs/ARB/texture_non_power_of_two.txt
+            // as said here implmenters (browser)
+            // are free to enable that
+            // https://www.khronos.org/webgl/public-mailing-list/archives/1001/msg00158.html
+            //
+            // Because here it's a huge quality/perf impact
+            //
             var powerOfTwo = isPowerOf2( this._textureWidth ) && isPowerOf2( this._textureHeight );
             if ( !powerOfTwo ) {
                 this.setWrapT( Texture.CLAMP_TO_EDGE );
@@ -339,9 +351,13 @@ define( [
                     this.setMinFilter( Texture.LINEAR );
                 }
             }
-
             gl.texParameteri( target, gl.TEXTURE_MAG_FILTER, this._magFilter );
             gl.texParameteri( target, gl.TEXTURE_MIN_FILTER, this._minFilter );
+
+            if ( this._filterMult > 1.0 ) {
+                gl.texParameterf( gl.TEXTURE_2D, Texture.ANISOTROPIC_SUPPORT, this._filterMult );
+            }
+
             gl.texParameteri( target, gl.TEXTURE_WRAP_S, this._wrapS );
             gl.texParameteri( target, gl.TEXTURE_WRAP_T, this._wrapT );
         },
